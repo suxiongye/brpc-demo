@@ -25,6 +25,11 @@
             <version>1.2.3</version>
         </dependency>
         <dependency>
+            <groupId>com.baidu.rigel.tmp</groupId>
+            <artifactId>naming-sdk-java</artifactId>
+            <version>1.0.7</version>
+        </dependency>
+        <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>jcl-over-slf4j</artifactId>
             <version>1.7.25</version>
