@@ -1,0 +1,240 @@
+package re.query;
+option cc_generic_services = true;
+//请求类型，在线or离线
+enum ReqSrc {
+    ONLINE  = 0;
+    OFFLINE = 1;
+}
+enum ReqPriority {
+    VERYHIGH    = 0;
+    HIGH        = 1;
+    NORMAL      = 2;
+}
+//维度值类型，数字or字符串
+enum ValType {
+    INT = 0;    //int32 or int64
+    STR = 1;
+    INT_LIST = 2;
+    STR_LIST = 3;
+    UINT = 4;   //uint32 or uint64
+    STR_LIST_WITH_DAY_RANGE = 5; // app related with day range in realtime prediction
+}
+enum ReqType {
+    PREDICT     = 0;
+    LOCK        = 1;
+}
+enum ReqSide {
+    NEW_DSP     = 0;
+    IM          = 1;
+}
+enum OrderType {
+    CPM     = 1;
+    CPT     = 2;
+}
+enum OpType {
+    OR  = 0;
+    AND = 1;
+}
+enum IdType {
+    UID = 0;
+    ENC_UID = 1;
+}
+//定向维度信息
+message TargetDim {
+    required bytes      name        = 1;    //集合名称
+    required ValType    type        = 2;    //维度值类型
+    repeated bytes      str_vals    = 3;    //str类型值list
+    repeated int64      int_vals    = 4;    //int类型值list
+    optional OpType     op_type     = 5 [default = OR]; //维度内部值的关系，默认为OR，如果是AND需要显式地指定
+    repeated uint64     uint_vals   = 6;    //uint类型值list
+}
+message GeoPoint {
+    required double     lat         = 1;    //纬度
+    required double     lon         = 2;    //经度
+}
+message GeoCircleTargetDim {
+    required bytes      name        = 1;    //集合名称
+    required GeoPoint   center      = 2;
+    required double     distance    = 3;    //单位米
+}
+message GeoBoxTargetDim {
+    required bytes      name            = 1;    //集合名称
+    required GeoPoint   top_left        = 2;
+    required GeoPoint   bottom_right    = 3;
+}
+message DimStatReq {
+    required bytes  dim_name    = 1;    //需要统计的维度
+    required uint32 max_num     = 2;    //指定需要统计的TOP N大小
+    optional bool   need_uv     = 3[default = false];
+}
+message ReQueryRequest {
+    optional uint64         req_id          = 1;    //请求id
+    required ReqPriority    priority        = 2;    //请求优先级
+    required ReqSrc         src             = 3;    //请求来源
+    repeated bytes          dates           = 4;    //预估的日期list
+    repeated TargetDim      dim_and         = 5;    //and维度list，没有值的维度不需要添加
+    repeated TargetDim      dim_or          = 6;    //or维度list，没有值的维度不需要添加
+    repeated TargetDim      dim_not         = 7;    //not 维度list，没有值的维度不需要添加
+    optional bool           need_sample     = 8  [default = false];     //是否需要抽样
+    optional uint32         sample_num      = 9;                        //抽样数量
+    repeated bytes          sample_dims     = 10;                       //指明需要抽样的数据维度，留空则默认返回所有维度
+    optional bool           need_cpm_stat   = 11 [default = false];     //是否需要统计cpm分布
+    optional uint32         cpm_interval    = 12;                       //统计cpm分布时的步长，单位为分
+    optional bool           need_slot_stat  = 13 [default = false];     //统计slotsize分布
+    optional bool           need_mate_stat  = 14 [default = false];     //统计样式分布
+    optional bool           need_avg_ctr    = 15 [default = false];     //统计平均ctr，clk/pv，未做折算
+    optional bool           need_avg_cpm    = 16 [default = false];     //统计平均cpm，单位为分
+    optional bool           need_sum_pv     = 17 [default = false];     //统计总pv
+    optional bool           need_sum_uv     = 18 [default = false];     //统计总uv
+    optional uint64         resource_id     = 19;                       //资源包id
+    optional bool           need_slotsize_filter    = 20 [default = true];  //是否需要进行默认广告尺寸过滤, 目前只有newdsp需要
+    optional bool           need_ctr_interval_stat  = 21 [default = false]; //是否需要统计ctr区分分布
+    optional uint32         ctr_interval_step       = 22;   //ctr区间分布统计步长，放大1000000倍之后的值
+    repeated DimStatReq     stat_dims               = 23;   //需要进行统计的维度信息，原有的slotsize,cpm,物料分布仍然支持原有请求方式
+    optional bool           need_sum_page_pv        = 24 [default = false];
+    optional OrderType      order_type              = 25 [default = CPM];//订单类型
+    optional bool           need_avg_cpm_adjust     = 26 [default = true];  //依赖于打开need_avg_cpm
+    optional bool           need_avg_cpc            = 27 [default = false];
+    optional GeoCircleTargetDim geo_circle_dim  = 28;
+    optional GeoBoxTargetDim    geo_box_dim     = 29;
+    repeated GeoCircleTargetDim geo_circle_list = 30;
+    //画像需求
+    optional bytes          crowd_path          = 31;
+    optional bool           is_uuid             = 32 [default = false];
+    optional IdType         id_type             = 33;
+    optional uint64         crowd_id            = 34;
+}
+message IntervalStat {
+    required double lower   = 1;    //区间下限
+    required double upper   = 2;    //区间上限
+    required double percent = 3;    //占比，目前只可能是pv占比
+    optional uint64 pv      = 4;
+    optional uint64 clk     = 5;
+    optional double ctr     = 6;
+    optional double gain    = 7;
+    optional double cpm     = 8;
+}
+message IdCount {
+    required uint64 id          = 1;    //统计的对象值
+    required double percent     = 2;    //统计占比
+    optional bytes  desc        = 3;    //对象值描述
+    optional bytes  str_id      = 4;    //针对str类型的维度，id字段无效，str_id字段生效，例如domain
+    required uint64 base_val    = 5;    //用于计算percent的分子，目前均为pv值
+    //pv、clk、gain数据均从抽样数据统计而来，没有时间序列的因素影响
+    optional uint64 pv          = 6;
+    optional uint64 clk         = 7;
+    optional uint64 gain        = 8;
+    optional uint64 uv          = 9;
+    optional GeoPoint poi       = 10;
+}
+message DimStat {
+    optional bytes      dim_name    = 1;    //维度名
+    optional ValType    type        = 2;    //维度值类型
+    repeated IdCount    stat        = 3;
+}
+enum Status {
+    SUCCEED         = 0; //成功
+    RE_QUERY_ERROR  = 1; //re_query处理错误
+    SEARCHDB_ERROR  = 2; //searchDB处理错误
+    RE_CALC_ERROR   = 3; //re_calc处理错误 (询价和锁定)
+    DELETE_ERROR    = 4; //删除锁定失败
+    PURCHASE_ERROR  = 5; //请求的purchase非正数
+    INVALID_QUERY   = 6; //无效的re_query_req
+    RE_CALC_CPT_LOCK_ERROR   = 7; //cpt锁量请求失败
+    ZERO_INVENTORY_ERROR   = 8; //无库存
+    INVENTORY_NOT_ENOUGH = 9; //库存不足,无法锁量
+    FIGURE_TASK_QUEUE_FULL_ERROR = 10; //画像队列满
+}
+message PvResult {
+    required    bytes   date        = 1;    //日期
+    required    uint64  pv          = 2;    //当前预估pv
+    required    uint64  pv_cnfd_min = 3;
+    required    uint64  pv_cnfd_max = 4;
+    optional    uint64  page_pv             = 5;    //当前预估page pv
+    optional    uint64  page_pv_cnfd_min    = 6;
+    optional    uint64  page_pv_cnfd_max    = 7;
+    optional    double  cpm                 = 8;    //当前预估cpm
+    optional    double  cpm_cnfd_min        = 9;
+    optional    double  cpm_cnfd_max        = 10;
+}
+message EstimateResult {
+    optional uint64     uv          = 1;    //覆盖人数
+    repeated PvResult   pv_list     = 2;    //展现量 search pv
+    optional double     avg_cpm     = 4;    //avp cpm
+    optional double     avg_ctr     = 5;    //avp ctr
+    //抽样数据按照列存储，不同的TargetDim中存储了不同行的同一列信息
+    //每一行在多个TargetDim的index是一致的，如果某些行没有某一类数据，那么会填充一个无效值
+    repeated TargetDim  dim_list    = 6;    //抽样数据
+    repeated IdCount    slot_stat   = 7;    //slotsize分布数据
+    repeated IdCount    mate_stat   = 8;    //物料分布数据
+    optional uint64     ori_pv_sum  = 9;    //searchdb统计出的原始pv值
+    repeated IntervalStat   cpm_interval_stat   = 10;   //cpm区分分布数据
+    repeated IntervalStat   ctr_interval_stat   = 11;   //ctr区分分布数据
+    repeated DimStat        dim_stat_list       = 12;   //请求指定的多个dim的分布统计
+    optional double         origin_avg_cpm      = 13;   //调整前的原始avp cpm
+    optional uint64     daily_avg_pv            = 14;   //日均pv
+    optional uint64     daily_avg_uv            = 15;   //日均uv
+    optional double     avg_cpc                 = 16;   //avg cpc
+    repeated string     poiid_list              = 17;
+}
+message ReQueryResponse {
+    required uint64         req_id      = 1;    //请求id
+    required Status         status      = 2;    //状态码（成功为0，不为0表示失败）
+    optional bytes          message     = 3;    //状态信息
+    optional EstimateResult result      = 4;    //预估结果
+    optional bool           need_deduct = 5;    //需要做剩余流量计算
+    optional uint64         queue_cap   = 6;    //画像队列剩余容量
+}
+message ReQueryDateRequest {
+    required uint64         req_id      = 1;    //请求id
+}
+message ReQueryDateResponse {
+    required uint64         req_id      = 1;    //请求id
+    required Status         status      = 2;    //状态码（成功为0，不为0表示失败）
+    optional bytes          message     = 3;    //状态信息
+    required bytes          start_date  = 4;    //可预估的起始日期
+    required bytes          end_date    = 5;    //可预估的截止日期
+}
+message ReCalcRequest {
+    required ReQueryRequest          query_req      = 1;
+    required ReqType                 req_type       = 2;   //请求类型
+    optional int64                   purchase       = 3;   //确定的总购买量
+    optional OrderType               order_type     = 4;   //订单类型
+    optional ReqSide                 req_source     = 5;   //请求来源
+    optional uint64                  dspid          = 6;   //下发请求的DSPID
+}
+message PoTuStat {
+    required uint64         po_id       = 1;    //有冲突的po
+    required int64          tu          = 2;    //有冲突的tu
+    required bytes          appsid      = 3;    //有冲突的appsid
+    required uint64         pv          = 4;    //po*tu对应的pv总和
+}
+message CptConflictStat {
+    required bytes          date        = 1;    //日期
+    repeated PoTuStat       po_tu_stat  = 2;    //匹配中的ins中po*tu的pv分布
+}
+message ReCalcResponse {
+    required ReQueryResponse         query_res      = 1;
+    required Status                  status         = 2;    //状态码（成功为0，不为0表示失败）
+    optional bytes                   message        = 3;   //状态信息
+    repeated CptConflictStat         cpt_stat       = 4;   //返回匹配中的date*po*tu信息
+}
+//用于释放
+message ReDeleRequest {
+    required uint64         req_id      = 1;    //请求id
+}
+message ReDeleResponse {
+    required Status           status      = 1;    //状态码（成功为0，不为0表示失败）
+}
+service ReQueryService {
+    rpc re_query (ReQueryRequest) returns (ReQueryResponse);
+    rpc re_query_date (ReQueryDateRequest) returns (ReQueryDateResponse);
+    rpc re_query_poi (ReQueryRequest) returns (ReQueryResponse);
+    rpc re_query_poiid_list (ReQueryRequest) returns (ReQueryResponse);
+    rpc re_query_figure (ReQueryRequest) returns (ReQueryResponse);
+    rpc re_query_realtime (ReQueryRequest) returns (ReQueryResponse);
+};
+service ReCalcService {
+    rpc re_calc (ReCalcRequest) returns (ReCalcResponse);
+    rpc re_dele (ReDeleRequest) returns (ReDeleResponse);
+}
