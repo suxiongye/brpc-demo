@@ -28,8 +28,8 @@ public class BenchmarkTest {
         // 设置默认参数
         if (args.length != 2) {
             System.out.println("Usage : BenchmarkTest 127.0.0.1:8002 threadNUm");
-            serviceUrl = "list:127.0.0.1:8002";
-            threadNum = 50;
+            serviceUrl = "list://127.0.0.1:8002";
+            threadNum = 2;
         } else {
             serviceUrl = args[0];
             threadNum = Integer.parseInt(args[1]);
@@ -65,11 +65,15 @@ public class BenchmarkTest {
         // 多线程并发请求
         SendInfo[] sendInfos = new SendInfo[threadNum];
         Thread[] threads = new Thread[threadNum];
+        // 多线程并发访问
         for (int i = 0; i < threadNum; i++) {
             sendInfos[i] = new SendInfo();
-            threads[i] = new Thread(new ThreadTask)
+            threads[i] = new Thread(new ThreadTask(rpcClient, echoServiceAsync, messageBytes, sendInfos[i]), "work"
+                    + "-thread-" + i);
+            threads[i].start();
         }
 
+        // 统计功能
         long lastSuccessRequestNum = 0;
         long lastFailRequestNum = 0;
         long lastElapsedNs = 0;
@@ -78,6 +82,7 @@ public class BenchmarkTest {
         while (!stop) {
             long beginTime = System.nanoTime();
             try {
+                // 计时器每秒统计一次
                 Thread.sleep(1000);
                 ++second;
             } catch (Exception e) {
@@ -88,7 +93,34 @@ public class BenchmarkTest {
             long elapseNs = 0;
             long averageElapsedNs = 0;
 
-            for (SendInfo sendInfo : se)
+            // 统计各个线程成功、失败数目及总耗时
+            for (SendInfo sendInfo : sendInfos) {
+                successNum += sendInfo.successRequestNum;
+                failNum += sendInfo.failRequestNum;
+                elapseNs += sendInfo.elapsedNs;
+            }
+
+            // 排除上一次统计的数据
+            if (successNum - lastSuccessRequestNum > 0) {
+                averageElapsedNs = (elapseNs - lastElapsedNs) / (successNum - lastSuccessRequestNum);
+            }
+            long endTime = System.nanoTime();
+            String msg = String.format("success = %s, fail = %s, average=%s ns",
+                    (successNum - lastSuccessRequestNum) * 1000 * 1000 * 1000 / (endTime - beginTime),
+                    (failNum - lastFailRequestNum) * 1000 * 1000 * 1000 / (endTime - beginTime), averageElapsedNs);
+            lastSuccessRequestNum = successNum;
+            lastFailRequestNum = failNum;
+            lastElapsedNs = elapseNs;
+
+            // 从第30秒开始计算平均qps
+            if (second > 30) {
+                long avgQps = (lastSuccessRequestNum - skippedQps) / (second - 30);
+                msg = msg + ", avgQps = " + avgQps;
+            } else {
+                skippedQps = lastSuccessRequestNum;
+            }
+
+            log.info(msg);
         }
     }
 
@@ -99,8 +131,34 @@ public class BenchmarkTest {
         public long elapsedNs = 0;
     }
 
-    // 回调任务
-    public static class EchoCallback implements RpcCallback
+    // 回调处理函数
+    public static class EchoCallback implements RpcCallback<EchoResponse> {
+        private long startTime;
+        private SendInfo sendInfo;
+
+        public EchoCallback(long startTime, SendInfo sendInfo) {
+            this.startTime = startTime;
+            this.sendInfo = sendInfo;
+        }
+
+        @Override public void success(EchoResponse response) {
+            if (null != response) {
+                sendInfo.successRequestNum++;
+                // 计算时间
+                long elapseTimeNs = System.nanoTime() - startTime;
+                sendInfo.elapsedNs += elapseTimeNs;
+                log.debug("asyn call success, elapseTimeNs = {}", elapseTimeNs);
+            } else {
+                sendInfo.failRequestNum++;
+                log.debug("async call failed");
+            }
+        }
+
+        @Override public void fail(Throwable e) {
+            sendInfo.failRequestNum++;
+            log.debug("async call failed, {}", e.getMessage());
+        }
+    }
 
     // 线程任务
     public static class ThreadTask implements Runnable {
@@ -123,7 +181,10 @@ public class BenchmarkTest {
             request.setMessage(new String(messageBytes));
             while (!stop) {
                 try {
-                    echoServiceAsync.echo(request, new EchoC)
+                    echoServiceAsync.echo(request, new EchoCallback(System.nanoTime(), sendInfo));
+                } catch (Exception ex) {
+                    log.info("Send Exception : " + ex.getMessage());
+                    sendInfo.failRequestNum++;
                 }
             }
         }
