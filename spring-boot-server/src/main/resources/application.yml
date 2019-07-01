@@ -1,0 +1,18 @@
+logging:
+  config: classpath:logback-spring.xml
+  directory: ./logs
+
+brpc:
+  global:
+    naming:
+      namingServiceUrl: zookeeper://127.0.0.1:2181/examples
+      group: "normal"
+      version: 2.0.0
+      ignoreFailOfNamingService: false
+      extra:
+        - key: weight
+          value: 10
+    server:
+      port: 8002
+      workThreadNum: 1
+      ioThreadNum: 1

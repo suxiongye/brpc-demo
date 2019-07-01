@@ -1,3 +1,5 @@
 .idea/
 demo.iml
 target/
+*.DS_Store
+logs/
